@@ -1,0 +1,26 @@
+<wiidisc version="1" shiftfiles="true" root="/!name!">
+	<id game="SMN">
+		<region type="P"/>
+		<region type="E"/>
+		<region type="J"/>
+	</id>
+	<options>
+		<section name="!dispname!">
+			<option name="!dispname!" id="!name!patch">
+				<choice name="Enabled">
+					<patch id="!name!patch"/>
+				</choice>
+			</option>
+		</section>
+	</options>
+	<patch id="!name!patch">
+		<!-- Inject Loader -->
+		<!--PAL--><memory offset="0x80328478" value="803482C0" original="8015BC60" />
+		<!--NTSC--><memory offset="0x80328130" value="803482C0" original="8015BB20" />
+		<!--JPN--><memory offset="0x80327E98" value="803482C0" original="8015B930" />
+
+		<folder external="Patches" disc="/Patches/" create="true" />
+
+		<memory offset="0x803482C0" valuefile="Loader.bin" />
+	</patch>
+</wiidisc>

@@ -1,0 +1,18 @@
+{
+  "name": "newsouper",
+  "version": "1.0.0",
+  "description": "A tool for creating NSMBW code mods.",
+  "main": "newsouper.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "nsmbw",
+    "mod"
+  ],
+  "author": "Liam Braun (LetsPlentendo)",
+  "license": "ISC",
+  "bin": {
+    "nsoup": "newsouper.js"
+  }
+}
