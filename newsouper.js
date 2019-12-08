@@ -93,10 +93,11 @@ ${file}`;
                 // now, compile the actual file and include it in the patch binary
                 compileAsm(modObj.name, hex(currAddr, 0), "tmp/out.bin");
                 let compiledAsm = fs.readFileSync("tmp/out.bin");
+                alignedLength = Math.ceil(compiledAsm.length / 4) * 4;
                 patchBinary.push(...intToArray(currAddr)); // address to patch
-                patchBinary.push(...intToArray(compiledAsm.length)); // length of patch (in this case always 4)
-                patchBinary.push(...compiledAsm); // code (in this case, the jump code)
-                currAddr += compiledAsm.length;
+                patchBinary.push(...intToArray(alignedLength)); // length of patch
+                patchBinary.push(...compiledAsm); // code
+                currAddr += alignedLength;
             }  
         }
     }

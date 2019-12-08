@@ -153,25 +153,23 @@ patch:
     lwz r4, 0x3C(r1)
     add r4, r4, r3
 
-readLength:
-    cmpw r3, r4
-    bgt exit
+nextPatch:
     lwz r5, 0(r3)
     lwz r6, 4(r3)
     addi r3, r3, 8
     add r6, r6, r3
 
 patchBytes:
-    cmpw r3, r6
-    beq doneBatch
     lwz r7, 0(r3)
     stw r7, 0(r5)
     addi r3, r3, 4
     addi r5, r5, 4
-    b patchBytes
+    cmpw r3, r6
+    blt patchBytes
 
 doneBatch:
-    b readLength
+    cmpw r3, r4
+    blt nextPatch
 exit:
     blr
     
