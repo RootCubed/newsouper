@@ -62,7 +62,7 @@ function compile(region) {
                 }
                 break;
             case "file": {
-                let file = fs.readFileSync(modObj.name + ".S");
+                let file = fs.readFileSync(modObj.name);
                 for (let patch of modObj.hooks) {
                     console.log(" -" + patch.name);
                     // first, figure out the code of the jump to be performed
@@ -74,7 +74,7 @@ ${patch.type} ${patch.name}
 .org ${offsetCAddr}
 ${file}`;
                     fs.writeFileSync("tmp/file.S", fileWithJump);
-                    compileAsm("tmp/file", hex(patchCAddr, 0), "tmp/out.bin");
+                    compileAsm("tmp/file.S", hex(patchCAddr, 0), "tmp/out.bin");
                     let jmp = fs.readFileSync("tmp/out.bin").subarray(patchCAddr, patchCAddr + 4);
                     // write that to the binary
                     patchBinary.push(...intToArray(parseInt(patch[region]))); // address to patch
