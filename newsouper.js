@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require("fs");
-const { execSync } = require('child_process');
+const { execSync } = require("child_process");
 
 let projectFName = process.argv[2];
 
@@ -40,7 +40,7 @@ compile("US_1");
 compile("US_2");
 
 fs.copyFileSync(__dirname + "/Loader.S", "tmp/Loader.S");
-compileAsm("tmp/Loader", "0x803482C0", "export/" + projectName + "/Loader.bin");
+compileAsm("tmp/Loader.S", "0x803482C0", "export/" + projectName + "/Loader.bin");
 
 let xml = fs.readFileSync(__dirname + "/NSMBWTemplate.xml").toString().replace(/!name!/g, projectName).replace(/!dispname!/g, displayName);
 fs.writeFileSync("export/riivolution/" + projectName + ".xml", xml);
@@ -108,7 +108,7 @@ function hex(num, offs) {
 }
 
 function compileAsm(n, addr, out) {
-    execSync(`powerpc-eabi-as -mregnames ${n}.S -o ${n}.o && powerpc-eabi-ld -Ttext ${addr} --oformat binary ${n}.o -o ${out} && rm ${n}.o`);
+    execSync(`powerpc-eabi-as -mregnames ${n} -o ${n}.o && powerpc-eabi-ld -T addresses.x -Ttext ${addr} --oformat binary ${n}.o -o ${out} && rm ${n}.o`);
 }
 
 function convertVersions(patches) {
