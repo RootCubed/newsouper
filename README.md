@@ -43,10 +43,14 @@ Currently, only the PowerPC assembly language is supported, C(++) support is bei
 * name (string): The name of the assembly file to be loaded (currently, only .S files are supported)
 * hooks (hook[]): Contains all hooks related to the file referenced in the parent object.
 
-### hook
+### hook (type: b, bl, beq,...)
 * name (string): Name of the function to hook to
-* type (string): Type of branch to use (currently supported: b and bl)
 * EU_1 (string): The hexadecimal representation of the location of the instruction to be replaced with the hook.
+
+### hook (type: single_instr)
+* name (string): Name of the patch
+* EU_1 (string): The hexadecimal representation of the location of the instruction to be replaced with the instruction.
+* instruction (string): The code fragment to be placed at the location specified in EU_1
 
 ## Example project file
 ```json

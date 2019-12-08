@@ -65,16 +65,25 @@ function compile(region) {
                 let file = fs.readFileSync(modObj.name);
                 for (let patch of modObj.hooks) {
                     console.log(" -" + patch.name);
-                    // first, figure out the code of the jump to be performed
                     let offsetCAddr = hex(currAddr, -0x80000000);
                     let patchCAddr = parseInt(patch[region]) - 0x80000000;
-                    let fileWithJump = 
+                    let fileWithAddCode;
+                    switch (patch.type) {
+                        case "b":
+                        case "bl":
+                            fileWithAddCode = 
 `.org ${hex(patchCAddr, 0)}
 ${patch.type} ${patch.name}
 .org ${offsetCAddr}
 ${file}`;
-                    fs.writeFileSync("tmp/file.S", fileWithJump);
-                    compileAsm("tmp/file.S", hex(patchCAddr, 0), "tmp/out.bin");
+                            break;
+                        case "single_instr":
+                            offsetCAddr = hex(currAddr, -0x80000000);
+                            patchCAddr = parseInt(patch[region]) - 0x80000000;
+                            fileWithAddCode = ".org " + hex(patchCAddr, 0) + '\n' + patch.instruction + '\n';
+                    }
+                    fs.writeFileSync("tmp/file.S", fileWithAddCode);
+                    compileAsm("tmp/file.S", hex(patch[region], 0), "tmp/out.bin");
                     let jmp = fs.readFileSync("tmp/out.bin").subarray(patchCAddr, patchCAddr + 4);
                     // write that to the binary
                     patchBinary.push(...intToArray(parseInt(patch[region]))); // address to patch
@@ -82,7 +91,7 @@ ${file}`;
                     patchBinary.push(...jmp); // code (in this case, the jump code)
                 }
                 // now, compile the actual file and include it in the patch binary
-                compileAsm(modObj.name, hex(currAddr, -0x80000000), "tmp/out.bin");
+                compileAsm(modObj.name, hex(currAddr, 0), "tmp/out.bin");
                 let compiledAsm = fs.readFileSync("tmp/out.bin");
                 patchBinary.push(...intToArray(currAddr)); // address to patch
                 patchBinary.push(...intToArray(compiledAsm.length)); // length of patch (in this case always 4)

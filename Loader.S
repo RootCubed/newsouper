@@ -123,7 +123,7 @@ panicWithMessage:
     callSysFunction OSFatal
 
 returnToGame:
-    li  r3, 1
+    li r3, 1
     lwz r31, 0x5C(r1)
     lwz r30, 0x58(r1)
     lwz r29, 0x54(r1)
