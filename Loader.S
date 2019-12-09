@@ -60,9 +60,9 @@ setEU:
     ori r31, r31, EUAddr@l
     b regionDetected
 setUS:
-    li r31, USAddr@h
+    lis r31, USAddr@h
     ori r31, r31, USAddr@l
-    b regionUnsupportedError
+    b regionDetected
 setJP:
     lis r31, JPAddr@h
     ori r31, r31, JPAddr@l

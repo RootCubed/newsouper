@@ -3,6 +3,8 @@
 const fs = require("fs");
 const { execSync } = require("child_process");
 
+const loaderLocation = "0x80001810";
+
 let projectFName = process.argv[2];
 
 if (projectFName == undefined || !fs.existsSync(projectFName)) {
@@ -40,7 +42,7 @@ compile("US_1");
 compile("US_2");
 
 fs.copyFileSync(__dirname + "/Loader.S", "tmp/Loader.S");
-compileAsm("tmp/Loader.S", "0x803482C0", "export/" + projectName + "/Loader.bin");
+compileAsm("tmp/Loader.S", loaderLocation, "export/" + projectName + "/Loader.bin");
 
 let xml = fs.readFileSync(__dirname + "/NSMBWTemplate.xml").toString().replace(/!name!/g, projectName).replace(/!dispname!/g, displayName);
 fs.writeFileSync("export/riivolution/" + projectName + ".xml", xml);
