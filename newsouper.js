@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
+const fs = require("fs-extra");
 const { execSync } = require("child_process");
 
 const loaderLocation = "0x80001810";
+const converters = {
+    "EU_1": EU1,
+    "EU_2": EU2,
+    "US_1": US1,
+    "US_2": US2
+}
 
 let projectFName = process.argv[2];
 
@@ -31,15 +37,58 @@ if (!fs.existsSync("export/riivolution")) {
 }
 
 console.log("converting offsets to other versions");
-projectParsed = convertVersions(projectParsed);
 
-let projectName = projectFName;
-let displayName = projectFName;
+let projectName = projectParsed.name;
 
-compile("EU_1");
-compile("EU_2");
-compile("US_1");
-compile("US_2");
+if (!fs.existsSync("export/" + projectName)) {
+    fs.mkdirSync("export/" + projectName);
+}
+if (!fs.existsSync("export/" + projectName + "/Patches")) {
+    fs.mkdirSync("export/" + projectName + "/Patches");
+}
+if (fs.existsSync("tmp")) {
+    fs.removeSync("tmp");
+}
+fs.mkdirSync("tmp");
+
+let displayName;
+for (let patch of projectParsed.patches) {
+    displayName = patch.name;
+    compileFiles(patch.files);
+    for (let region in converters) {
+        console.log("compiling for " + region + ":");
+        let patchBinary = [];
+        translateSymbols(patch.symbolFile, region, `tmp/addresses_${region}.x`);
+        link(patch.files, `tmp/addresses_${region}.x`);
+        // add the compiled assembly to the patch file
+        let compiledAsm = fs.readFileSync("tmp/compiled.bin");
+        patchBinary.push(...intToArray(0x80C00000)); // address to patch
+        patchBinary.push(...intToArray(compiledAsm.length)); // length of patch
+        patchBinary.push(...compiledAsm); // code
+        // then we generate the branches and the nop patches and add them too
+        let symbols = fs.readFileSync("tmp/map.txt").toString();
+        for (let hook of patch.hooks) {
+            console.log(" -" + hook.name);
+            let patchAddress = converters[region](parseInt(hook.EU_1));
+            let code = [0, 0, 0, 0];
+
+            if (hook.type == "nop") {
+                code = [0x60, 0x00, 0x00, 0x00];
+            } else {
+                let address = symbols.match(new RegExp(`0x[0-9, a-f, A-F]{16}(?=.+${hook.name})`, "g"));
+                if (address == null) {
+                    console.log(`Symbol ${hook.name} not found. Make sure you declared it globally if you used assembler!`);
+                    continue;
+                }
+                code = intToArray(hookBranch(patchAddress, parseInt(address[0], 16), hook.type));
+            }
+            patchBinary.push(...intToArray(patchAddress)); // address to patch
+            patchBinary.push(0x00, 0x00, 0x00, 0x04); // length of patch (in this case always 4)            
+            patchBinary.push(...code); // code
+        }
+        fs.writeFileSync(`export/${projectName}/Patches/Code${region}.bin`, Buffer.from(patchBinary));
+    }
+}
 
 fs.copyFileSync(__dirname + "/Loader.S", "tmp/Loader.S");
 compileAsm("tmp/Loader.S", loaderLocation, "export/" + projectName + "/Loader.bin");
@@ -47,63 +96,35 @@ compileAsm("tmp/Loader.S", loaderLocation, "export/" + projectName + "/Loader.bi
 let xml = fs.readFileSync(__dirname + "/NSMBWTemplate.xml").toString().replace(/!name!/g, projectName).replace(/!dispname!/g, displayName);
 fs.writeFileSync("export/riivolution/" + projectName + ".xml", xml);
 
-function compile(region) {
-    console.log("compiling " + region + ":");
-    let patchBinary = [];
-    let currAddr = 0x80C00000;
-    for (let modObj of projectParsed) {
-        switch (modObj.type) {
-            case "projName":
-                projectName = modObj.name;
-                displayName = modObj.display;
-                if (!fs.existsSync("export/" + projectName)) {
-                    fs.mkdirSync("export/" + projectName);
-                }
-                if (!fs.existsSync("export/" + projectName + "/Patches")) {
-                    fs.mkdirSync("export/" + projectName + "/Patches");
-                }
-                break;
-            case "file": {
-                let file = fs.readFileSync(modObj.name);
-                for (let patch of modObj.hooks) {
-                    console.log(" -" + patch.name);
-                    let offsetCAddr = hex(currAddr, -0x80000000);
-                    let patchCAddr = parseInt(patch[region]) - 0x80000000;
-                    let fileWithAddCode;
-                    switch (patch.type) {
-                        case "b":
-                        case "bl":
-                            fileWithAddCode = 
-`.org ${hex(patchCAddr, 0)}
-${patch.type} ${patch.name}
-.org ${offsetCAddr}
-${file}`;
-                            break;
-                        case "single_instr":
-                            offsetCAddr = hex(currAddr, -0x80000000);
-                            patchCAddr = parseInt(patch[region]) - 0x80000000;
-                            fileWithAddCode = ".org " + hex(patchCAddr, 0) + '\n' + patch.instruction + '\n';
-                    }
-                    fs.writeFileSync("tmp/file.S", fileWithAddCode);
-                    compileAsm("tmp/file.S", hex(patch[region], 0), "tmp/out.bin");
-                    let jmp = fs.readFileSync("tmp/out.bin").subarray(patchCAddr, patchCAddr + 4);
-                    // write that to the binary
-                    patchBinary.push(...intToArray(parseInt(patch[region]))); // address to patch
-                    patchBinary.push(0x00, 0x00, 0x00, 0x04); // length of patch (in this case always 4)
-                    patchBinary.push(...jmp); // code (in this case, the jump code)
-                }
-                // now, compile the actual file and include it in the patch binary
-                compileAsm(modObj.name, hex(currAddr, 0), "tmp/out.bin");
-                let compiledAsm = fs.readFileSync("tmp/out.bin");
-                alignedLength = Math.ceil(compiledAsm.length / 4) * 4;
-                patchBinary.push(...intToArray(currAddr)); // address to patch
-                patchBinary.push(...intToArray(alignedLength)); // length of patch
-                patchBinary.push(...compiledAsm); // code
-                currAddr += alignedLength;
-            }  
-        }
+function compileFiles(files) {
+    for (let f of files) {
+        execSync(`powerpc-eabi-gcc -I. -Os -fno-builtin -nodefaultlibs -fno-exceptions -mregnames -c -o tmp/${f}.o ${f}`);
     }
-    fs.writeFileSync(`export/${projectName}/Patches/Code${region}.bin`, Buffer.from(patchBinary));
+}
+
+function link(files, symbolFile) {
+    execSync(`powerpc-eabi-gcc -Wl,-Map -Wl,tmp/map.txt -nostartfiles -Wl,--oformat=binary -o tmp/compiled.bin -T ${symbolFile} ${files.reduce((acc, cur) => `${acc} tmp/${cur}.o`, "")}`);
+}
+
+function translateSymbols(file, region, out) {
+    let symbols = fs.readFileSync(file).toString().match(/\w+.*=.*\w+/g);
+    symbols = symbols.map(sym => {
+        sym = sym.split(/\s*=\s*/g);
+        sym[1] = "0x" + converters[region](parseInt(sym[1], 16)).toString(16);
+        sym = sym.join(" = ");
+        return sym;
+    });
+    fs.writeFileSync(out, `SECTIONS {\n\t. = 0x80C00000;\n\t${symbols.join(";\n\t")};\n}`);
+}
+
+function hookBranch(from, to, type) {
+    let addrModeBit = type.match("a") != null;
+    let linkBit = type.match("l") != null;
+    let distance = to - from;
+    if (distance > 0x3FFFFFC) {
+        console.log(`branch to big! (${from} -> ${to})`);
+    }
+    return 0x48000000 | (distance & 0x3FFFFFC) | addrModeBit << 1 | linkBit;
 }
 
 function intToArray(num) {
@@ -115,26 +136,12 @@ function intToArray(num) {
     return res;
 }
 
-function hex(num, offs) {
-    return "0x" + (parseInt(num) + offs).toString(16).padStart(8, "0");
-}
-
 function compileAsm(n, addr, out) {
     execSync(`powerpc-eabi-as -mregnames ${n} -o ${n}.o && powerpc-eabi-ld -T addresses.x -Ttext ${addr} --oformat binary ${n}.o -o ${out} && rm ${n}.o`);
 }
 
-function convertVersions(patches) {
-    for (let modObj of projectParsed) {
-        if (modObj.type == "file") {
-            for (let patch of modObj.hooks) {
-                 // TODO: Add more supported regions!
-                patch.EU_2 = EU2(patch.EU_1);
-                patch.US_1 = US1(patch.EU_1);
-                patch.US_2 = US2(patch.EU_1);
-            }
-        }
-    }
-    return patches;
+function EU1(offs) {
+    return offs;
 }
 
 function EU2(offs) {

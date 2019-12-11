@@ -1,11 +1,11 @@
 {
   "name": "newsouper",
-  "version": "1.0.2",
+  "version": "1.1",
   "description": "A tool for creating NSMBW code mods.",
   "main": "newsouper.js",
   "repository": {
-    "type" : "git",
-    "url" : "https://github.com/LetsPlentendo-CH/newsouper.git"
+    "type": "git",
+    "url": "https://github.com/LetsPlentendo-CH/newsouper.git"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -20,6 +20,6 @@
     "nsoup": "newsouper.js"
   },
   "dependencies": {
-    "fs": "0.0.1-security"
+    "fs-extra": "^8.1.0"
   }
 }

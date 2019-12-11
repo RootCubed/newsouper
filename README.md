@@ -19,8 +19,55 @@ Your project will consist of the following files:
 
 ### Project file
 This is the file that tells the builder the display name of the mod in Riivolution, which assembly files to use and gives information about the hooks (the address and which branch instruction to use).
-The file is in the JSON format, containing an array of objects.
-On the top level, each object must contain the key 'type', whose value must either be `file` or `projName`.
+The file is in the JSON format, containing an object with the keys "name" and "patches".
+
+### root object
+* name (string): The name of the folder which will go on your SD card for your Wii.
+* patches (array of patches): The patches to be compiled. NOTE: Currently, only one patch at a time is supported.
+
+### patch
+* name (string): The name to be shown in Riivolution.
+* files (array of string): The paths to the source files to be compiled
+* hooks (array of hooks): Contains all hooks related to the file referenced in the parent object.
+
+### hook (type: b, bl, ba, bla)
+* name (string): Name of the function to hook to
+* EU_1 (string): The hexadecimal representation of the location of the instruction to be replaced with the hook.
+
+### hook (type: nop)
+* name (string): Name of the patch
+* EU_1 (string): The hexadecimal representation of the location of the instruction to be NOPed.
+
+## Example project file
+```json
+{
+	"name": "SpeedrunTimer",
+	"patches": [
+		{
+			"name": "Speedrun Timer",
+			"symbolFile": "addresses.x",
+			"files": ["timer.S", "functions.c"],
+			"hooks": [
+				{
+					"name": "HookTimerText",
+					"type": "b",
+					"EU_1": "0x80159C20"
+				},
+				{
+					"name": "alwaysChangeTime",
+					"type": "nop",
+					"EU_1": "0x80159C08"
+				},
+				{
+					"name": "resetCounter",
+					"type": "b",
+					"EU_1": "0x8005E05C"
+				}
+			]
+		}
+	]
+}
+```
 
 ### Symbol file for linker
 This file contains the symbols that you can use in the assembly files. The format is the following:
@@ -31,45 +78,4 @@ SECTION {
 ```
 
 ### Code files
-Currently, only the PowerPC assembly language is supported, C(++) support is being worked on.
-
-## Objects in the project file
-
-### file
-* name (string): The name of the folder which will go on your SD card for your Wii.
-* display (string): The title of the mod, which will be shown in Riivolution.
-
-### projName
-* name (string): The name of the assembly file to be loaded (currently, only .S files are supported)
-* hooks (hook[]): Contains all hooks related to the file referenced in the parent object.
-
-### hook (type: b, bl, beq,...)
-* name (string): Name of the function to hook to
-* EU_1 (string): The hexadecimal representation of the location of the instruction to be replaced with the hook.
-
-### hook (type: single_instr)
-* name (string): Name of the patch
-* EU_1 (string): The hexadecimal representation of the location of the instruction to be replaced with the instruction.
-* instruction (string): The code fragment to be placed at the location specified in EU_1
-
-## Example project file
-```json
-[
-  {
-    "name": "ShakeWithB",
-    "display": "Shake With B",
-    "type": "projName"
-  },
-  {
-    "name": "shakeWithB.S",
-    "type": "file",
-    "hooks": [
-      {
-        "name": "shakeWithB",
-        "type": "b",
-        "EU_1": "0x8005E780"
-      }
-    ]
-  }
-]
-```
+PowerPC assembly and C(++) source files are supported.
