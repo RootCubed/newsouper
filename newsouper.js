@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 const fs = require("fs-extra");
-const { execSync } = require("child_process");
+const { execSync, exec } = require("child_process");
+
+const u8 = require("./arctool");
 
 const loaderLocation = "0x80001810";
 const converters = {
@@ -12,6 +14,23 @@ const converters = {
 }
 
 let projectFName = process.argv[2];
+
+if (!projectFName || !fs.existsSync(projectFName)) {
+    console.log("Please specify a project file.");
+    process.exit();
+}
+
+let isoName;
+let extract = true;
+if (process.argv[3] == "--iso") {
+    if (fs.existsSync("gamefiles")) {
+        extract = false;
+    } else if (!process.argv[4] || !fs.existsSync(process.argv[4])) {
+        console.log("Please specify an ISO file when using -iso or extract the game to gamefiles/");
+        process.exit();
+    }
+    isoName = process.argv[4];
+}
 
 if (projectFName == undefined || !fs.existsSync(projectFName)) {
     console.log("Please specify a project file.");
@@ -36,8 +55,6 @@ if (!fs.existsSync("export/riivolution")) {
     fs.mkdirSync("export/riivolution");
 }
 
-console.log("converting offsets to other versions");
-
 let projectName = projectParsed.name;
 
 if (!fs.existsSync("export/" + projectName)) {
@@ -54,9 +71,41 @@ fs.mkdirSync("tmp");
 let displayName;
 for (let patch of projectParsed.patches) {
     displayName = patch.name;
+    console.log("Compiling source code");
     compileFiles(patch.files);
+    linkFiles(patch);
+    console.log("Generating patched files:");
+    doFilePatches(patch.filePatches);
+}
+
+fs.copyFileSync(__dirname + "/Loader.S", "tmp/Loader.S");
+compileAsm("tmp/Loader.S", loaderLocation, "export/" + projectName + "/Loader.bin");
+
+let xml = fs.readFileSync(__dirname + "/NSMBWTemplate.xml").toString().replace(/!name!/g, projectName).replace(/!dispname!/g, displayName);
+fs.writeFileSync("export/riivolution/" + projectName + ".xml", xml);
+
+if (process.argv[3] == "--iso") {
+    if (extract) {
+        console.log(isoName);
+        fs.copyFileSync(isoName, "tmp/game.iso");
+        if (fs.existsSync("gamefiles")) {
+            fs.removeSync("gamefiles");
+        }
+        execSync("wit x tmp/game.iso gamefiles/");
+    }
+    fs.emptyDirSync("export/PatchedISO");
+    fs.copySync("gamefiles", "export/PatchedISO");
+    exec(`wit dolpatch export/PatchedISO/sys/main.dol -o new=text,80001810,800 xml=export/riivolution/${projectName}.xml -s export/${projectName}`);
+    if (!fs.existsSync("export/PatchedISO/files/Patches")) {
+        fs.mkdirSync("export/PatchedISO/files/Patches");
+    }
+    fs.copySync(`export/${projectName}/Patches`, "export/PatchedISO/files/Patches");
+    fs.copySync(`export/${projectName}/Files`, "export/PatchedISO/files");
+}
+
+function linkFiles(patch) {
     for (let region in converters) {
-        console.log("compiling for " + region + ":");
+        console.log("Building for " + region + ":");
         let patchBinary = [];
         translateSymbols(patch.symbolFile, region, `tmp/addresses_${region}.x`);
         link(patch.files, `tmp/addresses_${region}.x`);
@@ -74,6 +123,8 @@ for (let patch of projectParsed.patches) {
 
             if (hook.type == "nop") {
                 code = [0x60, 0x00, 0x00, 0x00];
+            } else if (hook.type == "instr") {
+                code = hook.instr.match(/.{1,2}(?=(.{2})+(?!.))|.{1,2}$/g); // split every 2 chars
             } else {
                 let address = symbols.match(new RegExp(`0x[0-9, a-f, A-F]{16}(?=.+${hook.name})`, "g"));
                 if (address == null) {
@@ -90,20 +141,64 @@ for (let patch of projectParsed.patches) {
     }
 }
 
-fs.copyFileSync(__dirname + "/Loader.S", "tmp/Loader.S");
-compileAsm("tmp/Loader.S", loaderLocation, "export/" + projectName + "/Loader.bin");
+function doFilePatches(patches) {
+    for (let fPatch of patches) {
+        if (!fPatch.file) {
+            console.log("No input file specified!");
+            continue;
+        } else {
+            if (fPatch.file[0] != '!') {
+                fPatch.file = "tmp/" + fPatch.file;
+            } else {
+                fPatch.file = fPatch.file.substring(1);
+            }
+        }
 
-let xml = fs.readFileSync(__dirname + "/NSMBWTemplate.xml").toString().replace(/!name!/g, projectName).replace(/!dispname!/g, displayName);
-fs.writeFileSync("export/riivolution/" + projectName + ".xml", xml);
+        if (!fPatch.out) {
+            if (fPatch.type !="getoriginalfiles") {
+                console.log("No output file specified!");
+                continue;
+            }
+        } else {
+            if (fPatch.out[0] != '!') {
+                fPatch.out = "tmp/" + fPatch.out;
+            } else {
+                fPatch.out = fPatch.out.substring(1);
+            }
+        }
 
-function compileFiles(files) {
-    for (let f of files) {
-        execSync(`powerpc-eabi-gcc -I. -Os -fno-builtin -nodefaultlibs -fno-exceptions -mregnames -c -o tmp/${f}.o ${f}`);
+        switch(fPatch.type) {
+            case "arcdecompress":
+                console.log(` -arcdecompress: ${fPatch.file} -> ${fPatch.out}`);
+                u8.decompressU8(fPatch.file, fPatch.out);
+                break;
+            case "arccompress":
+                console.log(` -arccompress: ${fPatch.file} -> ${fPatch.out}`);
+                u8.compressU8(fPatch.file, fPatch.out);
+                break;
+            case "copyfolder":
+                console.log(` -copyfolder: ${fPatch.file} -> ${fPatch.out}`);
+                if (fs.existsSync(fPatch)) {
+                    console.log(`Error: Folder ${fPatch.out} already exists. Make sure you use different names when copying files!`);
+                    break;
+                }
+                fs.copySync(fPatch.file, fPatch.out);
+                break;
+            case "compilebenzin":
+                console.log(` -compilebenzin: ${fPatch.file} -> ${fPatch.out}`);
+                execSync(`benzin m ${fPatch.file} ${fPatch.out}`, function (err, stdout) {
+                    console.log(err);
+                    console.log(stdout);
+                });
+                break;
+        }
+        if (fPatch.export) {
+            let trimmedFName = fPatch.out.split("/");
+            trimmedFName = trimmedFName[trimmedFName.length - 1];
+            console.log(` -exporting: ${fPatch.out} -> ${`export/${projectName}/Files/${fPatch.export}/${trimmedFName}`}`);
+            fs.outputFileSync(`export/${projectName}/Files/${fPatch.export}/${trimmedFName}`, fs.readFileSync(fPatch.out));
+        }
     }
-}
-
-function link(files, symbolFile) {
-    execSync(`powerpc-eabi-gcc -Wl,-Map -Wl,tmp/map.txt -nostartfiles -Wl,--oformat=binary -o tmp/compiled.bin -T ${symbolFile} ${files.reduce((acc, cur) => `${acc} tmp/${cur}.o`, "")}`);
 }
 
 function translateSymbols(file, region, out) {
@@ -114,7 +209,11 @@ function translateSymbols(file, region, out) {
         sym = sym.join(" = ");
         return sym;
     });
-    fs.writeFileSync(out, `SECTIONS {\n\t. = 0x80C00000;\n\t${symbols.join(";\n\t")};\n}`);
+    fs.writeFileSync(out, `
+SECTIONS {
+    . = 0x80C00000;
+    ${symbols.join(";\n\t")};
+}`);
 }
 
 function hookBranch(from, to, type) {
@@ -136,8 +235,19 @@ function intToArray(num) {
     return res;
 }
 
+function compileFiles(files) {
+    for (let f of files) {
+        execSync(`powerpc-eabi-gcc -I. -IC:\\devkitPro\\libogc\\include -Os -fno-builtin -fno-exceptions -mregnames -c -o tmp/${f}.o ${f}`);
+    }
+}
+
+function link(files, symbolFile) {
+    execSync(`powerpc-eabi-gcc -Wl,-Map,tmp/map.txt -nolibc -Wl,-V -nostartfiles -Wl,--oformat=binary -o tmp/compiled.bin -T ${symbolFile} ${files.reduce((acc, cur) => `${acc} tmp/${cur}.o`, "")} -LC:\\devKitPro\\libogc\\lib\\wii -logc`);
+}
+
 function compileAsm(n, addr, out) {
-    execSync(`powerpc-eabi-as -mregnames ${n} -o ${n}.o && powerpc-eabi-ld -T addresses.x -Ttext ${addr} --oformat binary ${n}.o -o ${out} && rm ${n}.o`);
+    execSync(`powerpc-eabi-as -mregnames ${n} -o ${n}.o && powerpc-eabi-ld -T addresses.x -Ttext ${addr} --oformat binary ${n}.o -o ${out}`);
+    fs.removeSync(`tmp/${n}.o`);
 }
 
 function EU1(offs) {

@@ -20,6 +20,7 @@
 		<!--JPN--><memory offset="0x80327E98" value="80001810" original="8015B930" />
 
 		<folder external="Patches" disc="/Patches/" create="true" />
+		<folder disc="/" external="Files" create="false" recursive="true" />
 
 		<memory offset="0x80001810" valuefile="Loader.bin" />
 	</patch>
