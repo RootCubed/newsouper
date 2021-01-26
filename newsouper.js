@@ -20,23 +20,6 @@ if (!projectFName || !fs.existsSync(projectFName)) {
     process.exit();
 }
 
-let isoName;
-let extract = true;
-if (process.argv[3] == "--iso") {
-    if (fs.existsSync("gamefiles")) {
-        extract = false;
-    } else if (!process.argv[4] || !fs.existsSync(process.argv[4])) {
-        console.log("Please specify an ISO file when using -iso or extract the game to gamefiles/");
-        process.exit();
-    }
-    isoName = process.argv[4];
-}
-
-if (projectFName == undefined || !fs.existsSync(projectFName)) {
-    console.log("Please specify a project file.");
-    process.exit();
-}
-
 let projectParsed;
 try {
     projectParsed = JSON.parse(fs.readFileSync(projectFName));
@@ -68,6 +51,22 @@ if (fs.existsSync("tmp")) {
 }
 fs.mkdirSync("tmp");
 
+let isoName = process.argv[3];
+let alreadyExtraced = fs.existsSync("gamefiles");
+if (process.argv[4] == "--export" && !alreadyExtraced) {
+    if (!fs.existsSync(process.argv[3])) {
+        console.log("The specified ISO file does not exists. Make sure you typed the path correctly!");
+        process.exit();
+    } else {
+        console.log("Extracting " + isoName + "...");
+        fs.copyFileSync(isoName, "tmp/game.iso");
+        if (fs.existsSync("gamefiles")) {
+            fs.removeSync("gamefiles");
+        }
+        execSync("wit x tmp/game.iso gamefiles/");
+    }
+}
+
 let displayName;
 for (let patch of projectParsed.patches) {
     displayName = patch.name;
@@ -84,14 +83,10 @@ compileAsm("tmp/Loader.S", loaderLocation, "export/" + projectName + "/Loader.bi
 let xml = fs.readFileSync(__dirname + "/NSMBWTemplate.xml").toString().replace(/!name!/g, projectName).replace(/!dispname!/g, displayName);
 fs.writeFileSync("export/riivolution/" + projectName + ".xml", xml);
 
-if (process.argv[3] == "--iso") {
-    if (extract) {
-        console.log(isoName);
-        fs.copyFileSync(isoName, "tmp/game.iso");
-        if (fs.existsSync("gamefiles")) {
-            fs.removeSync("gamefiles");
-        }
-        execSync("wit x tmp/game.iso gamefiles/");
+if (process.argv[4] == "--export") {
+    if (!alreadyExtraced) {
+        console.log("Something went wrong while exporting.");
+        process.exit(0);
     }
     fs.emptyDirSync("export/PatchedISO");
     fs.copySync("gamefiles", "export/PatchedISO");
@@ -125,6 +120,13 @@ function linkFiles(patch) {
                 code = [0x60, 0x00, 0x00, 0x00];
             } else if (hook.type == "instr") {
                 code = hook.instr.match(/.{1,2}(?=(.{2})+(?!.))|.{1,2}$/g); // split every 2 chars
+            } else if (hook.type == "pointer") {
+                let address = symbols.match(new RegExp(`0x[0-9, a-f, A-F]{16}(?=.+${hook.name})`, "g"));
+                if (address == null) {
+                    console.log(`Symbol ${hook.name} not found. Make sure you declared it globally if you used assembler!`);
+                    continue;
+                }
+                code = intToArray(parseInt(address[0], 16));
             } else {
                 let address = symbols.match(new RegExp(`0x[0-9, a-f, A-F]{16}(?=.+${hook.name})`, "g"));
                 if (address == null) {
@@ -147,7 +149,9 @@ function doFilePatches(patches) {
             console.log("No input file specified!");
             continue;
         } else {
-            if (fPatch.file[0] != '!') {
+            if (fPatch.type == "getoriginalfile") {
+                // leave file as-is
+            } else if (fPatch.file[0] != '!') {
                 fPatch.file = "tmp/" + fPatch.file;
             } else {
                 fPatch.file = fPatch.file.substring(1);
@@ -155,10 +159,8 @@ function doFilePatches(patches) {
         }
 
         if (!fPatch.out) {
-            if (fPatch.type !="getoriginalfiles") {
-                console.log("No output file specified!");
-                continue;
-            }
+            console.log("No output file specified!");
+            continue;
         } else {
             if (fPatch.out[0] != '!') {
                 fPatch.out = "tmp/" + fPatch.out;
@@ -168,6 +170,22 @@ function doFilePatches(patches) {
         }
 
         switch(fPatch.type) {
+            case "getoriginalfile":
+                console.log(` -getoriginalfile: ${fPatch.file} -> ${fPatch.out}`);
+                if (!alreadyExtraced) {
+                    if (!isoName) {
+                        console.log("No ISO file was specified, but it is needed for file patching. Please make sure the third argument is a path to an ISO file.");
+                        process.exit(0);
+                    }
+                    console.log("Extracting " + isoName + " for file patches...");
+                    fs.copyFileSync(isoName, "tmp/game.iso");
+                    if (fs.existsSync("gamefiles")) {
+                        fs.removeSync("gamefiles");
+                    }
+                    execSync("wit x tmp/game.iso gamefiles/");
+                }
+                fs.copyFileSync("gamefiles/files/" + fPatch.file, fPatch.out);
+                break;
             case "arcdecompress":
                 console.log(` -arcdecompress: ${fPatch.file} -> ${fPatch.out}`);
                 u8.decompressU8(fPatch.file, fPatch.out);

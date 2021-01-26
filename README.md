@@ -9,7 +9,7 @@ To build a project that modifies layouts, you will need to download Benzin from 
 
 ## Usage
 In the folder with your project:
-`nsoup <project>.json`
+`nsoup <project>.json [ISO file] [--export]`
 
 ## Project file structure
 Your project will consist of the following files:
@@ -40,13 +40,18 @@ The file is in the JSON format, containing an object with the keys "name" and "p
 * name (string): Name of the patch
 * EU_1 (string): The hexadecimal representation of the location of the instruction to be NOPed.
 
+### hook (type: pointer)
+* name (string): Name of the function to point to
+* EU_1 (string): The hexadecimal representation of the location where the pointer should be placed.
+
 ### fPatch
 An fPatch has a type parameter, a file parameter for selecting a file or folder to perform the action an, and, depending on the type, an out parameter.
-Any fPatch can specify an export property with the path to where the resulting file will be placed in the mod folder.
+Any fPatch can specify an export property with the path to where the resulting file will be placed in the project folder.
 
-If an exclamation mark is placed before the filename, the file is relative to the project folder. Otherwise, it will be relative to the tmp folder that is creating during the building process.
+If an exclamation mark is placed before the filename, the file is relative to the project folder (One exception - the `getoriginalfile` fPatch). Otherwise, it will be relative to the tmp folder that is creating during the building process.
 
 The following types are currently supported:
+* getoriginalfile: copies `file` from an original ISO to `out`.
 * arcdecompress: decompresses `file` to the folder `out`.
 * arccompress: compresses the folder `file` to the file `out`.
 * compilebenzin: converts an input XMLYT `file` to a BRLYT file `out`.
@@ -78,6 +83,12 @@ The following types are currently supported:
 				}
 			],
 			"filePatches": [
+				{
+					"type": "getoriginalfile",
+					"file": "Layout/gameScene/gameScene.arc",
+					"isolocation": "!SMNE01.wbfs",
+					"out": "gameScene.arc"
+				},
 				{
 					"type": "arcdecompress",
 					"file": "!gameScene.arc",
